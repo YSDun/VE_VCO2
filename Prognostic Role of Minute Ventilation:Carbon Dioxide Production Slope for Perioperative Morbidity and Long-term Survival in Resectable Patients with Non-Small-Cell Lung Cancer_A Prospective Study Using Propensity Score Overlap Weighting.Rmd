@@ -1,0 +1,788 @@
+---
+
+Title: "Prognostic Role of Minute Ventilation/Carbon Dioxide Production Slope for Perioperative Morbidity and Long-term Survival in Resectable Patients with Non-Small-Cell Lung Cancer: A Prospective Study Using Propensity Score Overlap Weighting"
+
+
+```{r}
+
+##############################################################
+# Hypothesis and variables of the study
+##############################################################
+# Hypothesis: Impaired Minute Ventilation/Carbon Dioxide Production Slope was associated with higher risk of perioperative morbidity, and shorter relapse-free survival and overall survival
+
+## Predictor: Minute Ventilation/Carbon Dioxide Production Slop (VE_VCO2_slope) ##
+# Continuous variable: VE_VCO2_slope_continuos
+# Categorical variable: VE_VCO2_slope
+
+
+## Outcomes: the name in the manuscript, the name in the dataset, variable type ##
+# Outcome 1: Relapse-free survival, Relapse_free_survival, Categorical variable  (the date of event: Relapse_free_survival_time_to_event)
+# Outcome 2: Overall survival, Categorical variable (the date of event: Overall_survival_time_to_event)
+# Outcome 3: The composite of perioperative complicatioins, Categorical variable
+# Outcome 3.1: Technical-related complication, Categorical variable
+# Outcome 3.2: Pulmonary complication, Categorical variable
+# Outcome 3.3: Cardiovascular complication, Categorical variable
+
+
+## Covariates: the name in the dataset, variable type ##
+# Sex: Sex, Categorical variable
+# Age: Age, Continuous variable
+# Height: Height, Continuous variable
+# Weight: weight, Continuous variable
+# Smoker ever: Smoking_ever, Categorical variable
+# Histology: Histology, Categorical variable
+# Type of lung resection: Type_of_lung_resection, Categorical variable
+# T stage: T, Categorical variable
+# N stage: N, Categorical variable
+# Hypertension: Hypertension, Categorical variable
+# Dyslipidemia: Dyslipidemia, Categorical variable
+# Diabetes mellitus: Diabetes, Categorical variable
+# Coronary artery disease: Coronary_artery_disease, Categorical variable
+# Cerebrovascular disease: Cerebrovascular_disease, Categorical variable
+# Tuberculosis: Tuberculosis, Categorical variable
+# Chronic bronchitis: Bronchitis, Categorical variable
+# Emphysema: Emphysema, Categorical variable
+# Chronic obstructive pulmonary disease: Chronic_obstructive_pulmonary_disease, Categorical variable
+
+```
+---
+
+
+```{r}
+
+##############################################################
+# To install the needed packages 
+##############################################################
+library("pROC")
+library("PSweight")
+library("survey")
+library("tableone")
+library("fmsb")
+library("survival")
+library("EValue")
+library("boot")
+library("cobalt")
+library("rms")
+library("survminer")
+
+```
+
+
+```{r}
+
+##############################################################
+# To read in data
+##############################################################
+setwd("working directory")
+data <- read.csv("Dataset.csv",na=c("-"))
+data_na_omit <- na.omit(data)
+
+```
+
+
+```{r}
+
+#######################################################################################################
+#  Receiver Operating Characteristic (ROC) curve analysis and optimal cut-off value identification
+#######################################################################################################
+# Reference: Xavier Robin, Natacha Turck, Alexandre Hainard, Natalia Tiberti, Frédérique Lisacek, Jean-Charles Sanchez, Markus Müller，Stefan Siegert, Matthias Doering, Zane Billings (2021). pROC: Display and Analyze ROC Curves-Processing in R. R package version 3.5-5. https://cran.r-project.org/web/packages/pROC
+
+## ROC curve for the outcome of relapse-free survival
+rocobj_outcome1 <- pROC::roc(Relapse_free_survival~VE_VCO2_slope_continuos+Sex+Age+Height+weight+Smoking_ever+Histology+T+N+Type_of_lung_resection+Hypertension+Dyslipidemia+Diabetes+Coronary_artery_disease+Cerebrovascular_disease+Tuberculosis+Emphysema+Bronchitis+Chronic_obstructive_pulmonary_disease, data=data_na_omit)
+plot.roc(rocobj_outcome1$VE_VCO2_slope_continuos,
+     legacy.axes = TRUE,
+     main="ROC best threshold",
+     thresholds="best", # to calculate optimal cut-off point
+     print.thres="best") # to show the optimal cut-off value in the ROC curve
+
+## ROC curve for the outcome of overall survival
+rocobj_outcome2 <- pROC::roc(Overall_survival~VE_VCO2_slope_continuos+Sex+Age+Height+weight+Smoking_ever+Histology+T+N+Type_of_lung_resection+Hypertension+Dyslipidemia+Diabetes+Coronary_artery_disease+Cerebrovascular_disease+Tuberculosis+Emphysema+Bronchitis+Chronic_obstructive_pulmonary_disease, data=data_na_omit)
+plot.roc(rocobj_outcome2$VE_VCO2_slope_continuos,
+     legacy.axes = TRUE,
+     main="ROC best threshold",
+     thresholds="best", # to calculate optimal cut-off point
+     print.thres="best") # to show the optimal cut-off value in the ROC curve
+
+## ROC curve for the outcome of the composite of perioperative complications
+rocobj_outcome3 <- pROC::roc(Composite_complications~VE_VCO2_slope_continuos+Sex+Age+Height+weight+Smoking_ever+Histology+T+N+Type_of_lung_resection+Hypertension+Dyslipidemia+Diabetes+Coronary_artery_disease+Cerebrovascular_disease+Tuberculosis+Emphysema+Bronchitis+Chronic_obstructive_pulmonary_disease, data=data_na_omit)
+plot.roc(rocobj_outcome3$VE_VCO2_slope_continuos,
+     legacy.axes = TRUE,
+     main="ROC best threshold",
+     thresholds="best", # to calculate optimal cut-off point
+     print.thres="best") # to show the optimal cut-off value in the ROC curve
+
+```
+
+
+```{r}
+
+##################################################################################################
+# To transform variables to appropriate types for further analyses
+##################################################################################################
+data_na_omit$VE_VCO2_slope <- as.factor(data_na_omit$VE_VCO2_slope)
+data_na_omit$Sex <- as.factor(data_na_omit$Sex)
+data_na_omit$Smoking_ever <- as.factor(data_na_omit$Smoking_ever)
+data_na_omit$Histology <- as.factor(data_na_omit$Histology)
+data_na_omit$T <- as.factor(data_na_omit$T)
+data_na_omit$N <- as.factor(data_na_omit$N)
+data_na_omit$Type_of_lung_resection <- as.factor(data_na_omit$Type_of_lung_resection)
+data_na_omit$Hypertension <- as.factor(data_na_omit$Hypertension)
+data_na_omit$Dyslipidemia <- as.factor(data_na_omit$Dyslipidemia)
+data_na_omit$Diabetes <- as.factor(data_na_omit$Diabetes)
+data_na_omit$Coronary_artery_disease <- as.factor(data_na_omit$Coronary_artery_disease)
+data_na_omit$Cerebrovascular_disease <- as.factor(data_na_omit$Cerebrovascular_disease)
+data_na_omit$Tuberculosis <- as.factor(data_na_omit$Tuberculosis)
+data_na_omit$Emphysema <- as.factor(data_na_omit$Emphysema)
+data_na_omit$Bronchitis <- as.factor(data_na_omit$Bronchitis)
+data_na_omit$Chronic_obstructive_pulmonary_disease <- as.factor(data_na_omit$Chronic_obstructive_pulmonary_disease)
+
+```
+
+
+```{r}
+
+##############################################################
+# Propensity score overlap weighting
+##############################################################
+# References: 	
+# Tianhui Zhou, Guangyu Tong, Fan Li, Laine Thomas, Fan Li (2022). PSweight: Propensity Score Weighting for Causal Inference with Observational Studies and Randomized Trials-Processing in R. R package version 1.1.8. https://cran.r-project.org/web/packages/PSweight
+#	Thomas Lumley (2021). survey: Analysis of Complex Survey Samples-Processing in R. R package version 4.1-1. https://cran.r-project.org/web/packages/survey
+# Kazuki Yoshida, Alexander Bartel, Jonathan J Chipman, Justin Bohn, Lucy DAgostino McGowan, Malcolm Barrett, Rune Haubo B Christensen, gbouzill (2022). tableone: Create 'Table 1' to Describe Baseline Characteristics with or without Propensity Score Weights-Processing in R. R package version 0.13.2. https://cran.r-project.org/web/packages/tableone
+# Noah Greifer (2023). cobalt: Covariate Balance Tables and Plots-Processing in R. R package version 4.5.0. https://cran.r-project.org/web/packages/cobalt
+
+# Step 1. To define the propensity score formula
+ps.formula<- VE_VCO2_slope~Sex+Age+Height+weight+Smoking_ever+Histology+T+N+Type_of_lung_resection+Hypertension+Dyslipidemia+Diabetes+Coronary_artery_disease+Cerebrovascular_disease+Tuberculosis+Emphysema+Bronchitis+Chronic_obstructive_pulmonary_disease
+
+# Step 2. To define the outcome formula
+# Outcome 1: Relapse-free survival
+out.formula_1<-Relapse_free_survival~Sex+Age+Height+weight+Smoking_ever+Histology+T+N+Type_of_lung_resection+Hypertension+Dyslipidemia+Diabetes+Coronary_artery_disease+Cerebrovascular_disease+Tuberculosis+Emphysema+Bronchitis+Chronic_obstructive_pulmonary_disease
+
+# Outcome 2: Overall survival
+out.formula_2<-Overall_survival~Sex+Age+Height+weight+Smoking_ever+Histology+T+N+Type_of_lung_resection+Hypertension+Dyslipidemia+Diabetes+Coronary_artery_disease+Cerebrovascular_disease+Tuberculosis+Emphysema+Bronchitis+Chronic_obstructive_pulmonary_disease
+
+# Outcome 3: The composite of perioperative complications
+out.formula_3<-Composite_complications~Sex+Age+Height+weight+Smoking_ever+Histology+T+N+Type_of_lung_resection+Hypertension+Dyslipidemia+Diabetes+Coronary_artery_disease+Cerebrovascular_disease+Tuberculosis+Emphysema+Bronchitis+Chronic_obstructive_pulmonary_disease
+
+# Outcome 3.1: Technical-related complication
+out.formula_3_1<-Technical_complication~Sex+Age+Height+weight+Smoking_ever+Histology+T+N+Type_of_lung_resection+Hypertension+Dyslipidemia+Diabetes+Coronary_artery_disease+Cerebrovascular_disease+Tuberculosis+Emphysema+Bronchitis+Chronic_obstructive_pulmonary_disease
+
+# Outcome 3.2: Pulmonary complication
+out.formula_3_2<-Pulmonary_complication~Sex+Age+Height+weight+Smoking_ever+Histology+T+N+Type_of_lung_resection+Hypertension+Dyslipidemia+Diabetes+Coronary_artery_disease+Cerebrovascular_disease+Tuberculosis+Emphysema+Bronchitis+Chronic_obstructive_pulmonary_disease
+
+# Outcome 3.3: Cardiovascular complication
+out.formula_3_3<-Cardiovascular_complication~Sex+Age+Height+weight+Smoking_ever+Histology+T+N+Type_of_lung_resection+Hypertension+Dyslipidemia+Diabetes+Coronary_artery_disease+Cerebrovascular_disease+Tuberculosis+Emphysema+Bronchitis+Chronic_obstructive_pulmonary_disease
+
+
+# Step 3. To conduct propensity score weighting
+vars <- c("Sex","Age","Height","weight","Smoking_ever","Histology","T","N","Type_of_lung_resection","Hypertension","Dyslipidemia","Diabetes","Coronary_artery_disease","Cerebrovascular_disease","Tuberculosis","Emphysema","Bronchitis","Chronic_obstructive_pulmonary_disease")
+
+# Outcome 1: Relapse-free survival
+ow1<-PSweight(ps.formula = ps.formula,yname = 'Relapse_free_survival',data = data_na_omit,weight = 'overlap')
+
+# Outcome 2: Overall survival
+ow2<-PSweight(ps.formula = ps.formula,yname = 'Overall_survival',data = data_na_omit,weight = 'overlap')
+
+# Outcome 3: The composite of perioperative complications
+ow3<-PSweight(ps.formula = ps.formula,yname = 'Composite_complications',data = data_na_omit,weight = 'overlap')
+
+# Outcome 3.1: Technical-related complication
+ow3_1<-PSweight(ps.formula = ps.formula,yname = 'Technical_complication',data = data_na_omit,weight = 'overlap')
+
+# Outcome 3.2: Pulmonary complication
+ow3_2<-PSweight(ps.formula = ps.formula,yname = 'Pulmonary_complication',data = data_na_omit,weight = 'overlap')
+
+# Outcome 3.3: Cardiovascular complication
+ow3_3<-PSweight(ps.formula = ps.formula,yname = 'Cardiovascular_complication',data = data_na_omit,weight = 'overlap')
+
+# Step 4: to append propensity score and weights
+# Outcome 1: Relapse-free survival
+ow1_outfit <- OUTmethod(out.formula = out.formula_1, family='binomial', datain = data_na_omit, dataout = data_na_omit)
+ow1_est <- cbind(ow1_outfit$m.est, data_na_omit) 
+names(ow1_est)[names(ow1_est) == 'ow1_outfit$m.est'] <- 'm_est'
+ow1_est$ps_0 <- ow1$propensity[,1]
+ow1_est$ps_1 <- ow1$propensity[,2]
+ow1_est$psweights <- ifelse (ow1_est$VE_VCO2_slope==1, ow1_est$ps_0, ow1_est$ps_1)
+
+# Outcome 2: Overall survival
+ow2_outfit <- OUTmethod(out.formula = out.formula_2, family='binomial', datain = data_na_omit, dataout = data_na_omit)
+ow2_est <- cbind(ow2_outfit$m.est, data_na_omit) 
+names(ow2_est)[names(ow2_est) == 'ow2_outfit$m.est'] <- 'm_est'
+ow2_est$ps_0 <- ow2$propensity[,1]
+ow2_est$ps_1 <- ow2$propensity[,2]
+ow2_est$psweights <- ifelse (ow2_est$VE_VCO2_slope==1, ow2_est$ps_0, ow2_est$ps_1)
+
+# Outcome 3: The composite of perioperative complications
+ow3_outfit <- OUTmethod(out.formula = out.formula_3, family='binomial', datain = data_na_omit, dataout = data_na_omit)
+ow3_est <- cbind(ow3_outfit$m.est, data_na_omit) 
+names(ow3_est)[names(ow3_est) == 'ow3_outfit$m.est'] <- 'm_est'
+ow3_est$ps_0 <- ow3$propensity[,1]
+ow3_est$ps_1 <- ow3$propensity[,2]
+ow3_est$psweights <- ifelse (ow3_est$VE_VCO2_slope==1, ow3_est$ps_0, ow3_est$ps_1)
+
+# Outcome 3.1: Technical-related complication
+ow3_1_outfit <- OUTmethod(out.formula = out.formula_3_1, family='binomial', datain = data_na_omit, dataout = data_na_omit)
+ow3_1_est <- cbind(ow3_1_outfit$m.est, data_na_omit) 
+names(ow3_1_est)[names(ow3_1_est) == 'ow3_1_outfit$m.est'] <- 'm_est'
+ow3_1_est$ps_0 <- ow3_1$propensity[,1]
+ow3_1_est$ps_1 <- ow3_1$propensity[,2]
+ow3_1_est$psweights <- ifelse (ow3_1_est$VE_VCO2_slope==1, ow3_1_est$ps_0, ow3_1_est$ps_1)
+
+# Outcome 3.2: Pulmonary complication
+ow3_2_outfit <- OUTmethod(out.formula = out.formula_3_2, family='binomial', datain = data_na_omit, dataout = data_na_omit)
+ow3_2_est <- cbind(ow3_2_outfit$m.est, data_na_omit) 
+names(ow3_2_est)[names(ow3_2_est) == 'ow3_2_outfit$m.est'] <- 'm_est'
+ow3_2_est$ps_0 <- ow3_2$propensity[,1]
+ow3_2_est$ps_1 <- ow3_2$propensity[,2]
+ow3_2_est$psweightss <- ifelse (ow3_2_est$VE_VCO2_slope==1, ow3_2_est$ps_0, ow3_2_est$ps_1)
+
+# Outcome 3.3: Cardiovascular complication
+ow3_3_outfit <- OUTmethod(out.formula = out.formula_3_3, family='binomial', datain = data_na_omit, dataout = data_na_omit)
+ow3_3_est <- cbind(ow3_3_outfit$m.est, data_na_omit) 
+names(ow3_3_est)[names(ow3_3_est) == 'ow3_3_outfit$m.est'] <- 'm_est'
+ow3_3_est$ps_0 <- ow3_3$propensity[,1]
+ow3_3_est$ps_1 <- ow3_3$propensity[,2]
+ow3_3_est$psweights <- ifelse (ow3_3_est$VE_VCO2_slope==1, ow3_3_est$ps_0, ow3_3_est$ps_1)
+
+
+# Step 5: to output the distribution of covariates between the two groups before and after propensity score overlap weighting.
+
+# to show the distribution of covariates before propensity score overlap weighting, with standardized mean differences between the two groups.
+tabUnmatched <- CreateTableOne(vars = vars, strata = "VE_VCO2_slope", data = data_na_omit, test = FALSE)
+print(tabUnmatched, smd = TRUE)
+
+# to show the distribution of covariates after propensity score overlap weighting, with standardized mean differences between the two groups.
+rhcSvy <- svydesign(ids = ~ 1, data = ow1_est, weights = ~ ow1_est$psweights)
+tabWeighted <- svyCreateTableOne(vars = vars, strata = "VE_VCO2_slope", data = rhcSvy, test = FALSE)
+print(tabWeighted, smd = TRUE)
+
+
+#Step 6: to assess the balance in variables between the two groups by Love plot.
+new.names <- c(Sex = "Sex",
+               Age = "Age",
+               Height = "Height",
+               weight = "Weight",
+               Smoking_ever = "Smoke ever",
+               Histology_1 = "Adenocarcinoma",
+               Histology_2 = "Squamouscell",
+               Histology_3 = "OtherNSCLCs",
+               T_0 = "Tis",
+               T_1 = "T1",
+               T_2 = "T2",
+               T_3 = "T3",
+               T_4 = "T4",
+               N_0 = "N0",
+               N_1 = "N1",
+               N_2 = "N2",
+               Type_of_lung_resection_1 = "Pneumonectomy",
+               Type_of_lung_resection_2 = "Lobectomy",
+               Type_of_lung_resection_3 = "Segmentectomy",
+               Type_of_lung_resection_4 = "Wedgeresection",
+               Type_of_lung_resection_5 = "Explorativethoracotomywithoutlungresection",
+               Type_of_lung_resection_6 = "Twolunglobesresection",
+               Hypertension = "Hypertension",
+               Dyslipidemia = "Dyslipidemia",
+               Diabetes = "Diabetesmellitus",
+               Coronary_artery_disease = "Coronaryarterydisease",
+               Cerebrovascular_disease = "Cerebrovasculardisease",
+               Tuberculosis = "Tuberculosis",
+               Emphysema = "Emphysema",
+               Bronchitis = "Chronicbronchitis",
+               Chronic_obstructive_pulmonary_disease = "Chronicobstructivepulmonarydisease"
+)
+
+love.plot(ps.formula, data = data_na_omit, abs = TRUE, weights = ow1_est$psweights,
+          drop.distance = TRUE,
+          thresholds = c(m = .1),
+          var.names = new.names,
+          line=TRUE,
+          sample.names = c("Unweighted", "PS Weighted"),
+          limits = c(0, .82),
+          position = c(.75, .25)) +
+  theme(legend.box.background = element_rect(), 
+        legend.box.margin = margin(1, 1, 1, 1))
+
+```
+
+
+
+
+```{r}
+
+############################################################################################################################################################################
+# To fit Cox proportional hazards models and calculate incidence rate difference between the groups, before and after incorporating weights derived from overlap weighting.
+############################################################################################################################################################################
+# References: 
+# Terry M Therneau, Thomas Lumley, Atkinson Elizabeth, Crowson Cynthia (2023). survival: Survival Analysis-Processing in R. R package version 3.5-5. https://cran.r-project.org/web/packages/survival
+# Minato Nakazawa (2023). fmsb: Functions for Medical Statistics Book with some Demographic Data-Processing in R. R package version 0.7.5. https://cran.r-project.org/web/packages/fmsb
+
+
+## Outcome 1: Relapse-free survival ##
+# Cox proportional hazards model before propensity score overlap weighting
+cox_model_crude_ow1 <- coxph(formula=Surv(Relapse_free_survival_time_to_event, Relapse_free_survival) ~ VE_VCO2_slope,data=data_na_omit,method = "breslow",cluster=JMP_ID)
+summary(cox_model_crude_ow1,extend=FALSE)
+
+# Cox proportional hazards model after propensity score overlap weighting
+cox_model_weighted_ow1 <- coxph(formula=Surv(Relapse_free_survival_time_to_event, Relapse_free_survival) ~ VE_VCO2_slope,data=data_na_omit,weights=ow1_est$psweights,method = "breslow",cluster=JMP_ID)
+summary(cox_model_weighted_ow1,extend=FALSE)
+
+# Incidence rate difference before propensity score overlap weighting
+cox_model_pyears_ow1<- pyears(cox_model_crude_ow1,scale = 12) # 1 year = 12 months
+summary(cox_model_pyears_ow1,rate=TRUE,ci.r=TRUE)
+crude_IRD_ow1 <- ratedifference(cox_model_pyears_ow1$event[2], cox_model_pyears_ow1$event[1], cox_model_pyears_ow1$pyears[2], cox_model_pyears_ow1$pyears[1],CRC=TRUE,conf.level = 0.95)
+crude_IRD_ow1$estimate*1000 # transform the unit from event per person-years to event per 1000 person-years
+crude_IRD_ow1$conf.int*1000 # transform the unit from event per person-years to event per 1000 person-years
+crude_IRD_ow1$p.value
+
+# Incidence rate difference after propensity score overlap weighting
+cox_model_weighted_pyears_ow1<- pyears(cox_model_weighted_ow1,scale = 12) # 1 year = 12 months
+summary(cox_model_weighted_pyears_ow1,rate=TRUE,ci.r=TRUE)
+weighted_IRD_ow1 <- ratedifference(cox_model_weighted_pyears_ow1$event[2], cox_model_weighted_pyears_ow1$event[1], cox_model_weighted_pyears_ow1$pyears[2], cox_model_weighted_pyears_ow1$pyears[1],CRC=TRUE,conf.level = 0.95)
+weighted_IRD_ow1$estimate*1000 # transform the unit from event per person-years to event per 1000 person-years
+weighted_IRD_ow1$conf.int*1000 # transform the unit from event per person-years to event per 1000 person-years
+weighted_IRD_ow1$p.value
+
+
+##Outcome 2: Overall survival##
+# Cox proportional hazards model before propensity score overlap weighting
+cox_model_crude_ow2 <- coxph(formula=Surv(Overall_survival_time_to_event, Overall_survival) ~ VE_VCO2_slope,data=data_na_omit,method = "breslow",cluster=JMP_ID)
+summary(cox_model_crude_ow2,extend=FALSE)
+
+# Cox proportional hazards model after propensity score overlap weighting
+cox_model_weighted_ow2 <- coxph(formula=Surv(Overall_survival_time_to_event, Overall_survival) ~ VE_VCO2_slope,data=data_na_omit,weights=ow2_est$psweights,method = "breslow",cluster=JMP_ID)
+summary(cox_model_weighted_ow2,extend=FALSE)
+
+# Incidence rate difference before propensity score overlap weighting
+cox_model_pyears_ow2<- pyears(cox_model_crude_ow2,scale = 12) # 1 year = 12 months
+summary(cox_model_pyears_ow2,rate=TRUE,ci.r=TRUE)
+crude_IRD_ow2 <- ratedifference(cox_model_pyears_ow2$event[2], cox_model_pyears_ow2$event[1], cox_model_pyears_ow2$pyears[2], cox_model_pyears_ow2$pyears[1],CRC=TRUE,conf.level = 0.95)
+crude_IRD_ow2$estimate*1000 # transform the unit from event per person-years to event per 1000 person-years
+crude_IRD_ow2$conf.int*1000 # transform the unit from event per person-years to event per 1000 person-years
+crude_IRD_ow2$p.value
+
+# Incidence rate difference after propensity score overlap weighting
+cox_model_weighted_pyears_ow2<- pyears(cox_model_weighted_ow2,scale = 12) # 1 year = 12 months
+summary(cox_model_weighted_pyears_ow2,rate=TRUE,ci.r=TRUE)
+weighted_IRD_ow2 <- ratedifference(cox_model_weighted_pyears_ow2$event[2], cox_model_weighted_pyears_ow2$event[1], cox_model_weighted_pyears_ow2$pyears[2], cox_model_weighted_pyears_ow2$pyears[1],CRC=TRUE,conf.level = 0.95)
+weighted_IRD_ow2$estimate*1000 # transform the unit from event per person-years to event per 1000 person-years
+weighted_IRD_ow2$conf.int*1000 # transform the unit from event per person-years to event per 1000 person-years
+weighted_IRD_ow2$p.value
+
+```
+
+
+
+
+```{r}
+############################################################################################################################################################################
+# To fit logistic regression models, before and after incorporating weights derived from overlap weighting.
+############################################################################################################################################################################
+# Reference: 	Frank E Harrell Jr (2023). rms: Regression Modeling Strategies-Processing in R. R package version 6.6-0. https://cran.r-project.org/web/packages/rms.
+
+## Outcome 3: the composite of perioperative complications ##
+# Crude odds ratio
+L <- glm(Composite_complications~VE_VCO2_slope, data = data_na_omit, maxit=10000)
+L.est <- summary(L)$coefficients[2, 1]
+L.se  <- summary(L)$coefficients[2, 2]
+OR_est <- exp(L.est)
+OR_lwr <- exp(L.est-1.96*L.se)
+OR_upr <- exp(L.est+1.96*L.se)
+OR_p   <- summary(L)$coefficients[2, 4]
+OR_est
+OR_lwr
+OR_upr
+OR_p 
+
+# Weighted odds ratio
+ow3_or    <- summary(ow3,    type = "OR", contrast = c(-1, 1), CI = TRUE)
+ow3_or_est <- exp(ow3_or$estimates)[1,1]
+ow3_or_est
+ow3_or_est_lr <- exp(ow3_or$estimates)[1,4]
+ow3_or_est_lr
+ow3_or_est_ur <- exp(ow3_or$estimates)[1,5]
+ow3_or_est_ur
+ow3_or_est_pval <- ow3_or$estimates[1,6]
+ow3_or_est_pval
+
+
+##Outcome 3.1: technical-related complication##
+#Crude odds ratio
+L <- glm(Technical_complication~VE_VCO2_slope, data = data_na_omit, maxit=10000)
+L.est <- summary(L)$coefficients[2, 1]
+L.se  <- summary(L)$coefficients[2, 2]
+OR_est <- exp(L.est)
+OR_lwr <- exp(L.est-1.96*L.se)
+OR_upr <- exp(L.est+1.96*L.se)
+OR_p   <- summary(L)$coefficients[2, 4]
+OR_est
+OR_lwr
+OR_upr
+OR_p 
+
+# Weighted odds ratio
+ow3_1_or    <- summary(ow3_1,    type = "OR", contrast = c(-1, 1), CI = TRUE)
+ow3_1_or_est <- exp(ow3_1_or$estimates)[1,1]
+ow3_1_or_est
+ow3_1_or_est_lr <- exp(ow3_1_or$estimates)[1,4]
+ow3_1_or_est_lr
+ow3_1_or_est_ur <- exp(ow3_1_or$estimates)[1,5]
+ow3_1_or_est_ur
+ow3_1_or_est_pval <- ow3_1_or$estimates[1,6]
+ow3_1_or_est_pval
+
+
+## Outcome 3.2: pulmonary complication ##
+# Crude odds ratio
+L <- glm(Pulmonary_complication~VE_VCO2_slope, data = data_na_omit, maxit=10000)
+L.est <- summary(L)$coefficients[2, 1]
+L.se  <- summary(L)$coefficients[2, 2]
+OR_est <- exp(L.est)
+OR_lwr <- exp(L.est-1.96*L.se)
+OR_upr <- exp(L.est+1.96*L.se)
+OR_p   <- summary(L)$coefficients[2, 4]
+OR_est
+OR_lwr
+OR_upr
+OR_p 
+
+# Weighted odds ratio
+ow3_2_or    <- summary(ow3_2,    type = "OR", contrast = c(-1, 1), CI = TRUE)
+ow3_2_or_est <-  exp(ow3_2_or$estimates)[1,1]
+ow3_2_or_est
+ow3_2_or_est_lr <- exp(ow3_2_or$estimates)[1,4]
+ow3_2_or_est_lr
+ow3_2_or_est_ur <- exp(ow3_2_or$estimates)[1,5]
+ow3_2_or_est_ur
+ow3_2_or_est_pval <- ow3_2_or$estimates[1,6]
+ow3_2_or_est_pval
+
+
+## Outcome 3.3: cardiovascular complication ##
+# Crude odds ratio
+L <- glm(Cardiovascular_complication~VE_VCO2_slope, data = data_na_omit, maxit=10000)
+L.est <- summary(L)$coefficients[2, 1]
+L.se  <- summary(L)$coefficients[2, 2]
+OR_est <- exp(L.est)
+OR_lwr <- exp(L.est-1.96*L.se)
+OR_upr <- exp(L.est+1.96*L.se)
+OR_p   <- summary(L)$coefficients[2, 4]
+OR_est
+OR_lwr
+OR_upr
+OR_p 
+
+# Weighted odds ratio
+ow3_3_or    <- summary(ow3_3,    type = "OR", contrast = c(-1, 1), CI = TRUE)
+ow3_3_or_est <-  exp(ow3_3_or$estimates)[1,1]
+ow3_3_or_est
+ow3_3_or_est_lr <- exp(ow3_3_or$estimates)[1,4]
+ow3_3_or_est_lr
+ow3_3_or_est_ur <- exp(ow3_3_or$estimates)[1,5]
+ow3_3_or_est_ur
+ow3_3_or_est_pval <- ow3_3_or$estimates[1,6]
+ow3_3_or_est_pval
+
+```
+
+
+```{r}
+
+############################################################################################################################################################################
+# To calculate complication rate and complication rate difference between groups.
+############################################################################################################################################################################
+# Reference: Minato Nakazawa (2023). fmsb: Functions for Medical Statistics Book with some Demographic Data-Processing in R. R package version 0.7.5. https://cran.r-project.org/web/packages/fmsb
+
+## Outcome 3: the composite of perioperative complications ##
+# Crude complication rate difference
+aggregate(x=data_na_omit$Composite_complications, by=list(data_na_omit$VE_VCO2_slope),sum)
+crude_IRD_ow3 <- ratedifference(56, 100, 172, 723,CRC=TRUE,conf.level = 0.95)
+crude_IRD_ow3$estimate
+crude_IRD_ow3$conf.int
+crude_IRD_ow3$p.value
+# Weighted complication rate difference
+ow3_dif    <- summary(ow3,    type = "DIF", contrast = c(-1, 1), CI = TRUE)
+ow3_dif$estimates
+
+
+## Outcome 3.1: technical-related complication ##
+# Crude complication rate difference
+aggregate(x=data_na_omit$Technical_complication, by=list(data_na_omit$VE_VCO2_slope),sum)
+crude_IRD_ow3_1 <- ratedifference(22, 57, 172, 723,CRC=TRUE,conf.level = 0.95)
+crude_IRD_ow3_1$estimate
+crude_IRD_ow3_1$conf.int
+crude_IRD_ow3_1$p.value
+# Weighted complication rate difference
+ow3_1_dif    <- summary(ow3_1,    type = "DIF", contrast = c(-1, 1), CI = TRUE)
+ow3_1_dif$estimates
+
+
+## Outcome 3.2: pulmonary complication ##
+# Crude complication rate difference
+aggregate(x=data_na_omit$Pulmonary_complication, by=list(data_na_omit$VE_VCO2_slope),sum)
+crude_IRD_ow3_2 <- ratedifference(25, 30, 172, 723,CRC=TRUE,conf.level = 0.95)
+crude_IRD_ow3_2$estimate
+crude_IRD_ow3_2$conf.int
+crude_IRD_ow3_2$p.value
+# Weighted complication rate difference
+ow3_2_dif    <- summary(ow3_2,    type = "DIF", contrast = c(-1, 1), CI = TRUE)
+ow3_2_dif$estimates
+
+
+## outcome 3.3: cardiovascular complication##
+# Crude complication rate difference
+aggregate(x=data_na_omit$Cardiovascular_complication, by=list(data_na_omit$VE_VCO2_slope),sum)
+crude_IRD_ow3_3 <- ratedifference(14, 20, 172, 723,CRC=TRUE,conf.level = 0.95)
+crude_IRD_ow3_3$estimate
+crude_IRD_ow3_3$conf.int
+crude_IRD_ow3_3$p.value
+# Weighted complication rate difference
+ow3_3_dif    <- summary(ow3_3,    type = "DIF", contrast = c(-1, 1), CI = TRUE)
+ow3_3_dif$estimates
+
+
+```
+
+
+
+```{r}
+
+############################################################################################################################################################################
+# To calculate E-value
+############################################################################################################################################################################
+# Reference: Maya B. Mathur, Louisa H. Smith, Peng Ding, Tyler J. VanderWeele (2023). EValue: Sensitivity Analyses for Unmeasured Confounding and Other Biases in Observational Studies and Meta-Analyses-Processing in R. R package version 4.1.3. https://cran.r-project.org/web/packages/EValue
+
+# E-Value for the outcome of relapse-free survival
+evalues.HR(est = 1.381, lo = 1.016, hi = 1.877, rare = FALSE) # evalues.HR(est = the point estimate, lo = the lower limit of the confidence interval, hi = the higher limit of the confidence interval, rare = True if outcome is rare (<15 percent at end of follow-up); False if outcome is not rare (>15 percent at end of follow-up))#
+
+# E-Value for the outcome of overall survival
+evalues.HR(est = 1.685, lo = 1.146, hi = 2.477, rare = FALSE) # evalues.HR(est = the point estimate, lo = the lower limit of the confidence interval, hi = the higher limit of the confidence interval, rare = True if outcome is rare (<15 percent at end of follow-up); False if outcome is not rare (>15 percent at end of follow-up))#
+
+# E-Value for the outcome of the composite of complications
+evalues.OR(est = 2.318, lo = 1.542, hi = 3.487, rare = FALSE) # evalues.HR(est = the point estimate, lo = the lower limit of the confidence interval, hi = the higher limit of the confidence interval, rare = True if outcome is rare (<15 percent at end of follow-up); False if outcome is not rare (>15 percent at end of follow-up))#
+
+
+```
+
+
+
+```{r}
+###########################################################
+# Internal validation by Bootstrapping 
+###########################################################
+# Reference: Angelo Canty, Brian Ripley (2022). boot: Bootstrap Functions (Originally by Angelo Canty for S)-Processing in R. R package version 1.3-28.1. https://cran.r-project.org/web/packages/boot
+
+
+## Outcome1: Relapse-free survival ##
+# To calculate C-index
+boot.cox.Cindex.estimate.outcome1 <- function(data,indices) {
+  samples <- data[indices, ]
+  L <- lrm(formula=out.formula_1, data = samples, x=T, y=T, weights=ow1_est$psweights,maxit=10000)
+  L$stats[6]
+}
+Cindex.boot.outcome1 <- boot(data_na_omit,boot.cox.Cindex.estimate.outcome1,R=1000) 
+Cindex.boot.outcome1$t0
+Cindex.boot.outcome1.se <- sd(Cindex.boot.outcome1$t)
+Cindex.boot.outcome1_C_lower <- Cindex.boot.outcome1$t0-1.96*Cindex.boot.outcome1.se
+Cindex.boot.outcome1_C_lower
+Cindex.boot.outcome1_C_upper <- Cindex.boot.outcome1$t0+1.96*Cindex.boot.outcome1.se
+Cindex.boot.outcome1_C_upper
+# To calculate brier score
+boot.cox.brier.estimate.outcome1 <- function(data,indices) {
+  samples <- data[indices, ]
+  L <- lrm(formula=out.formula_1, data = samples, x=T, y=T, weights=ow1_est$psweights,maxit=10000)
+  L$stats[15]
+}
+brier.boot.outcome1 <- boot(data_na_omit,boot.cox.brier.estimate.outcome1,R=1000)
+brier.boot.outcome1$t0
+brier.boot.outcome1.se <- sd(brier.boot.outcome1$t)
+brier.boot.outcome1_B_lower <- brier.boot.outcome1$t0-1.96*brier.boot.outcome1.se
+brier.boot.outcome1_B_lower
+brier.boot.outcome1_B_upper <- brier.boot.outcome1$t0+1.96*brier.boot.outcome1.se
+brier.boot.outcome1_B_upper
+# To obtain calibration slope
+  L <- lrm(formula = out.formula_1, x = T, y = T,data=data_na_omit,weights = ow1_est$psweights)
+  Slope <- vector()
+  n <- nrow(data_na_omit)
+  for(i in 1 : 1000) {
+   g <- update(L, subset=sample(1 : n, n, replace=TRUE))
+   v <- validate(g)
+   Slope[i] <- v['Slope', 'index.corrected']
+   Slope[i]
+  }
+  Slope.outcome1.CI <- quantile(Slope, c(.025, .975))
+  Slope.outcome1.CI
+  Slope.outcome1 <- mean(Slope)
+  Slope.outcome1
+
+  
+## Outcome 2: Overall Survival ##
+# To calculate C-index
+  boot.cox.Cindex.estimate.outcome2 <- function(data,indices) {
+  samples <- data[indices, ]
+  L <- lrm(formula=out.formula_2, data = samples, x=T, y=T, weights=ow2_est$psweights,maxit=10000)
+  L$stats[6]
+}
+Cindex.boot.outcome2 <- boot(data_na_omit,boot.cox.Cindex.estimate.outcome2,R=1000) 
+Cindex.boot.outcome2$t0
+Cindex.boot.outcome2.se <- sd(Cindex.boot.outcome2$t)
+Cindex.boot.outcome2_C_lower <- Cindex.boot.outcome2$t0-1.96*Cindex.boot.outcome2.se
+Cindex.boot.outcome2_C_lower
+Cindex.boot.outcome2_C_upper <- Cindex.boot.outcome2$t0+1.96*Cindex.boot.outcome2.se
+Cindex.boot.outcome2_C_upper
+# To calculate brier score
+boot.cox.brier.estimate.outcome2 <- function(data,indices) {
+  samples <- data[indices, ]
+  L <- lrm(formula=out.formula_2, data = samples, x=T, y=T, weights=ow2_est$psweights,maxit=10000)
+  L$stats[15]
+}
+brier.boot.outcome2 <- boot(data_na_omit,boot.cox.brier.estimate.outcome2,R=1000)
+brier.boot.outcome2$t0
+brier.boot.outcome2.se <- sd(brier.boot.outcome2$t)
+brier.boot.outcome2_B_lower <- brier.boot.outcome2$t0-1.96*brier.boot.outcome2.se
+brier.boot.outcome2_B_lower
+brier.boot.outcome2_B_upper <- brier.boot.outcome2$t0+1.96*brier.boot.outcome2.se
+brier.boot.outcome2_B_upper
+# To obtain calibration slope
+  L <- lrm(formula = out.formula_2, x = T, y = T,data=data_na_omit,weights = ow2_est$psweights)
+  Slope <- vector()
+  n <- nrow(data_na_omit)
+  for(i in 1 : 1000) {
+   g <- update(L, subset=sample(1 : n, n, replace=TRUE))
+   v <- validate(g)
+   Slope[i] <- v['Slope', 'index.corrected']
+   Slope[i]
+  }
+  Slope.outcome2.CI <- quantile(Slope, c(.025, .975))
+  Slope.outcome2.CI
+  Slope.outcome2 <- mean(Slope)
+  Slope.outcome2
+  
+  
+## Outcome 3: The composite of perioperative complications ##
+# To calculate C-index
+boot.cox.Cindex.estimate.outcome3 <- function(data,indices) {
+  samples <- data[indices, ]
+  L <- lrm(formula=out.formula_3, data = samples, x=T, y=T, weights=ow3_est$psweights,maxit=10000)
+  L$stats[6]
+}
+Cindex.boot.outcome3 <- boot(data_na_omit,boot.cox.Cindex.estimate.outcome3,R=1000) 
+Cindex.boot.outcome3$t0
+Cindex.boot.outcome3.se <- sd(Cindex.boot.outcome3$t)
+Cindex.boot.outcome3_C_lower <- Cindex.boot.outcome3$t0-1.96*Cindex.boot.outcome3.se
+Cindex.boot.outcome3_C_lower
+Cindex.boot.outcome3_C_upper <- Cindex.boot.outcome3$t0+1.96*Cindex.boot.outcome3.se
+Cindex.boot.outcome3_C_upper
+# To calculate brier score
+boot.cox.brier.estimate.outcome3 <- function(data,indices) {
+  samples <- data[indices, ]
+  L <- lrm(formula=out.formula_3, data = samples, x=T, y=T, weights=ow3_est$psweights,maxit=10000)
+  L$stats[15]
+}
+brier.boot.outcome3 <- boot(data_na_omit,boot.cox.brier.estimate.outcome3,R=5)
+brier.boot.outcome3$t0
+brier.boot.outcome3.se <- sd(brier.boot.outcome3$t)
+brier.boot.outcome3_B_lower <- brier.boot.outcome3$t0-1.96*brier.boot.outcome3.se
+brier.boot.outcome3_B_lower
+brier.boot.outcome3_B_upper <- brier.boot.outcome3$t0+1.96*brier.boot.outcome3.se
+brier.boot.outcome3_B_upper
+# To obtain calibration slope
+  L <- lrm(formula = out.formula_3, x = T, y = T,data=data_na_omit,weights = ow3_est$psweights)
+  Slope <- vector()
+  n <- nrow(data_na_omit)
+  for(i in 1 : 1000) {
+   g <- update(L, subset=sample(1 : n, n, replace=TRUE))
+   v <- validate(g)
+   Slope[i] <- v['Slope', 'index.corrected']
+   Slope[i]
+  }
+  Slope.outcome3.CI <- quantile(Slope, c(.025, .975))
+  Slope.outcome3.CI
+  Slope.outcome3 <- mean(Slope)
+  Slope.outcome3
+```
+
+
+
+```{r}
+###########################################################
+# Kaplan-Meier Survival Curves
+###########################################################
+# Reference: Alboukadel Kassambara, Marcin Kosinski, Przemyslaw Biecek, Scheipl Fabian (2021). survminer: Drawing Survival Curves using 'ggplot2'-processing in R. R version 0.4.9.https://cran.r-project.org/web/packages/survminer
+
+
+## Outcome 1: Relapse-free survival ##
+fit_RFS <- survfit(Surv(Relapse_free_survival_time_to_event, Relapse_free_survival) ~ VE_VCO2_slope,data=data_na_omit)
+grid.draw.ggsurvplot <- function(x){
+  survminer:::print.ggsurvplot(x, newpAge = FALSE)
+}
+Relapse_free_survival_KM <- ggsurvplot(
+  fit_RFS,                    
+  pval = FALSE,         
+  log.rank.weights="1",
+  xlab = "Follow up time (months)",  
+  ylab = "Relapse-free survival (probability)",
+  break.time.by = 12,     
+  risk.table = "absolute",  
+  risk.table.y.text.col = TRUE,
+  risk.table.y.text = FALSE,
+  risk.table.height = 0.3,
+  legend.labs = 
+    c("VE/VCO2 < 31", "VE/VCO2 ≥ 31"),   
+  palette = 
+    c("#2E9FDF", "#F08080"), 
+  conf.int = T,
+  surv.scale = c("percent"),
+  xlim=c(0,60),
+  legend = c(0.9,0.15),
+  legend.title = "",
+)
+ggsave(file = "Relapse_free_survival_KM.pdf", Relapse_free_survival_KM, width = 16, height = 8.5, units = "in") 
+
+
+## Outcome 2: Overall survival ##
+fit_OS <- survfit(Surv(Overall_survival_time_to_event, Overall_survival) ~ VE_VCO2_slope,data=data_na_omit)
+Overall_survival <- ggsurvplot(
+  fit_crude_ow2,                    
+  pval = FALSE,         
+  log.rank.weights="1",
+  xlab = "Follow up time (months)",  
+  ylab = "Overall survival (probability)",
+  break.time.by = 12,    
+  risk.table = "absolute",  
+  risk.table.y.text.col = TRUE,
+  risk.table.y.text = FALSE,
+  risk.table.Height = 0.3,
+  legend.labs = 
+    c("VE/VCO2 < 31", "VE/VCO2 ≥ 31"),  
+  palette = 
+    c("#2E9FDF", "#F08080"), 
+  conf.int = T,
+  surv.scale = c("percent"),
+  xlim=c(0,60),
+  legend = c(0.9,0.15),
+  legend.title = "",
+)
+ggsave(file = "Overall_survival.pdf", Overall_survival, width = 16, height = 8.5, units = "in")
+
+```
+
+
+
+```{R}
+
+#############################################################################
+# Other analyses 
+#############################################################################
+
+## Covariates interaction tests ##
+# We conducted a significant test to determine the impact of the imteraction between each of the 18 covariates and the predictor on the oucomes. In order to demonstrated the analytical code utilized in these tests, we used the covariate of "Sex" as an example. This is done for the sake of brevity in report.
+data_na_omit$Sex_num <- as.numeric(data_na_omit$Sex)
+out_outcome1_interaction_test_sex<-Relapse_free_survival~Sex+Age+Height+weight+Smoking_ever+Histology+T+N+Type_of_lung_resection+Hypertension+Dyslipidemia+Diabetes+Coronary_artery_disease+Cerebrovascular_disease+Tuberculosis+Emphysema+Bronchitis+Chronic_obstructive_pulmonary_disease+Sex_num*VE_VCO2_slope
+glm_interaction_test_sex<-glm(out_outcome1_interaction_test_sex, data=data_na_omit, weight=ow1_est$psweights)
+p_sex <- coef(summary(glm_interaction_test_sex))[,4]
+p_sex['Sex_num:VE_VCO2_slope1']
+
+
+## Subgroup analyses ##
+# The study involved conducting pre-specified subgroup analyses based on birth sex and age, as well as additional subgroups determined by significant factors identified in the interaction tests. Specifically, subgroup analyses were performed on subgroups defined by sex, age, smoking history, cerebrovascular disease, tuberculosis, and chronic obstructive pulmonary disease. In order to ensure consistency, overlap weighting propensity scores were re-created prior to subgroup model development, and all other analyses followed the same process outlined above. Due to the length of the analysis, the codes utilized in this process were not repeated in this section for brevity.
+
+```
